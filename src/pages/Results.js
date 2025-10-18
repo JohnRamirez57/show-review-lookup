@@ -1,27 +1,51 @@
 import { useEffect, useState } from "react";
 import { CleanShowData } from "../components/CleanShowData";
-import { useSearchShows } from "../components/GetShows"
-import { useSelector } from "react-redux";
+import { useSearchShows, useShowWithIDS } from "../components/GetShows"
+import { useSelector, useDispatch } from "react-redux";
+import { updateFavoritedShows } from "./store.ts";
 
 
 export const Results = () => {
-  const {shows, isLoading, isError, searchShows} = useSearchShows();
-  const [returnedCleanedData, setReturnedCleanedData] = useState([])
+  const dispatch = useDispatch()
+  const {shows, isLoading: searchLoading, isError: searchError, searchShows} = useSearchShows();
+  const {favoriteShows, isLoading: favoritesLoading, isError: favoritesError, searchShowID} = useShowWithIDS()
+  const [returnedCleanedData, setReturnedCleanedData] = useState([]) //results data
+  const [showData, setShowData] = useState([]); //main data to make results from
   const currentSearch = useSelector((state) => state.shows.value.query) || ""
+  const currentFavoritedShows = useSelector((state) => state.shows.value.favoritedShows) //returns ids of favorite shows
+  const toggleFavoriteShows = useSelector((state) => state.shows.value.showFavorites)
 
   useEffect(() =>{
     setReturnedCleanedData([])
     searchShows(currentSearch);
   }, [currentSearch])
 
-  useEffect(() => { //this'll update shows once they finally load
-    if (shows && shows.length > 0) {
-      const cleanedData = CleanShowData(shows);
-      setReturnedCleanedData(cleanedData);
-      console.log("Shows fetched:", shows.length);
-      console.log("Cleaned shows:", cleanedData.length);
+  useEffect(() => {
+    if (toggleFavoriteShows) {
+      searchShowID(currentFavoritedShows);
+    } else {
+      setShowData(returnedCleanedData);
     }
-  }, [shows]);
+  }, [toggleFavoriteShows]);
+
+  useEffect(() => {
+    if (toggleFavoriteShows) {
+      const cleanedData = favoriteShows && favoriteShows.length > 0 
+        ? CleanShowData(favoriteShows, true, currentFavoritedShows)
+        : [];
+      setShowData(cleanedData);
+    }
+  }, [favoriteShows, toggleFavoriteShows, currentFavoritedShows]);
+
+  useEffect(() => {
+    if (shows && shows.length > 0) {
+      const cleanedData = CleanShowData(shows, false, currentFavoritedShows);
+      setReturnedCleanedData(cleanedData);
+      if (!toggleFavoriteShows) {
+        setShowData(cleanedData);
+      }
+    }
+  }, [shows, currentFavoritedShows, toggleFavoriteShows]);
 
   const fixDate = (showDate) =>{
     if (!showDate) return "N/A"
@@ -31,21 +55,24 @@ export const Results = () => {
     return yearlessShowDate + "-" + showYear
   }
 
+  const removeTags = (tag, showSummary) => {
+  let summary = showSummary;
+  const closingTag = tag.slice(0, 1) + "/" + tag.slice(1);
+  while (summary.includes(tag)) {
+    summary = summary.replace(tag, ""); 
+  }
+  while (summary.includes(closingTag)) {
+    summary = summary.replace(closingTag, "");  
+  }
+  return summary;
+  }
+
   const cleanSummary = (summary) =>{
     if (!summary) return "N/A";
     let newSummary = summary;
-    do {
-      newSummary = newSummary.replace("<p>", "")
-    } while (newSummary.includes("<p>"));
-    do {
-      newSummary = newSummary.replace("</p>", "")
-    } while (newSummary.includes("</p>"));
-    do {
-      newSummary = newSummary.replace("<b>", "")
-    } while (newSummary.includes("<b>"));
-    do {
-      newSummary = newSummary.replace("</b>", "")
-    } while (newSummary.includes("</b>"));
+    newSummary = removeTags("<p>", newSummary)
+    newSummary = removeTags("<b>", newSummary)
+    newSummary = removeTags("<i>", newSummary)
     return newSummary
   }
 
@@ -71,27 +98,33 @@ export const Results = () => {
     return array.join(", ")
   }
 
-  
+  const updateFavorites = (e) => {
+    const showID = e.target.id;
+    const button = document.getElementById(showID)
+    // const parentDiv = button.closest(".result")
+    dispatch(updateFavoritedShows(showID))
+    button.classList.toggle("favorited")
+  }
 
   return (
     <div className="results-container">
-      {isLoading && <h1>Loading Shows</h1>}
-      {isError && <h1>Error. Couldn't load shows...</h1>}
-      {shows.length === 0 && <h1>No Shows Found</h1>}
-      {returnedCleanedData.map((showData, index) => {
-        // if (!showData) {
-        //   console.warn(`Skipping show at index ${index}:`, showData);
-        //   return null;
-        // }
+      {((searchLoading && !toggleFavoriteShows) || (favoritesLoading && toggleFavoriteShows)) && <h1>Loading Shows</h1>}
+      {(searchError || favoritesError) && <h1>Error. Couldn't load shows...</h1>}
+      {(showData.length === 0 && !toggleFavoriteShows) && <h1>No Shows Found</h1>}
+      {(showData.length === 0 && toggleFavoriteShows) && <h1>No Favorited Shows (yet!)</h1>}
+      {showData.map((showData, index) => {
+        console.log("Is Favorited: " + showData["isFavorited"])
         return (
           <div className="result" key={index}>
         <div className="box1">
+          <button className={showData["isFavorited"] ? "favorite-button favorited" : "favorite-button"} id={showData["showID"]} onClick={(e) => updateFavorites(e)}>⭐</button>
           <img alt="Show Cover" loading="lazy" src={showData["coverPhoto"] || "https://picsum.photos/200"}></img>
         </div>
         <div className="box2">
           <h1 className="showTitle">{showData["showTitle"]}</h1>
           <p className="showScore"><b>Type: </b>{showData["type"]}</p>
           <p className="showRating"><b>Rating: </b>{showData["rating"]}/10</p>
+          <p className="showScore"><b>Score: </b>{showData["showScore"]}</p>
           <p className="startDate"><b>Premiered: </b>{fixDate(showData["startDate"])}</p>
           <p className="endDate"><b>Ended: </b>{fixDate(showData["endDate"])}</p>
           <p className="status"><b>Status: </b>{showData["showStatus"]}</p>
@@ -109,4 +142,4 @@ export const Results = () => {
         </div>
       </div>
         )
-      })}</div>)}
+  })}</div>)}
