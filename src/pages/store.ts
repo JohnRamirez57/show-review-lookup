@@ -11,7 +11,7 @@ interface ShowState {
   value: ShowValues;
 }
 
-const initialState: ShowState = {value: {searchResultShows: [], favoritedShows: [], query: "", showFavorites: false}}
+const initialState: ShowState = {value: {searchResultShows: [], favoritedShows: JSON.parse(localStorage.getItem("favorited-shows") || "[]"), query: "", showFavorites: false}}
 
 const userSlice = createSlice({
   name: "shows",
@@ -33,6 +33,7 @@ const userSlice = createSlice({
       } else {
         state.value.favoritedShows.push(action.payload)
       }
+      localStorage.setItem("favorited-shows", JSON.stringify(state.value.favoritedShows))
     },
 
     updateQuery: (state, action) => {
